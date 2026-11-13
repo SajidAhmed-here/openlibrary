@@ -6,6 +6,7 @@ on:
   # and a workflow skipped by a trigger filter never reports, leaving the PR unmergeable.
   # That includes a stacked PR, which targets the branch of the PR below it.
   pull_request:
+  workflow_dispatch:
 permissions:
   contents: read
 
@@ -37,18 +38,27 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version-file: pyproject.toml
-      # setup-uv prunes its cache to what's slow to rebuild: psycopg2 (built from source) and the git dependencies.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential libpq-dev libxml2-dev libxslt1-dev libffi-dev libicu-dev pkg-config postgresql
+          # pytest-postgresql starts its own server; expose the installed server tools.
+          echo "$(pg_config --bindir)" >> "$GITHUB_PATH"
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           activate-environment: true
           enable-cache: true
-          cache-dependency-glob: requirements*.txt
+          cache-dependency-glob: |
+            requirements*.txt
+            pyproject.toml
         env:
           UV_PYTHON_DOWNLOADS: never # build the venv from setup-python's Python
       - name: Install dependencies
         run: |
           uv pip install -r requirements_test.txt
+          uv pip check
       - run: make git
       - name: Run make i18n
         run: |
@@ -84,16 +94,25 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version-file: pyproject.toml
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ env.pythonLocation }}
-          key: ${{ runner.os }}-venv-${{ env.pythonLocation }}-${{ hashFiles('requirements*.txt') }}
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential libpq-dev libxml2-dev libxslt1-dev libffi-dev libicu-dev pkg-config
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-      - name: Install dependencies
+        with:
+          activate-environment: true
+          enable-cache: true
+          cache-dependency-glob: |
+            requirements*.txt
+            pyproject.toml
         env:
-          UV_SYSTEM_PYTHON: 1
-        run: uv pip install -r requirements_test.txt
+          UV_PYTHON_DOWNLOADS: never
+      - name: Install dependencies
+        run: |
+          uv pip install -r requirements_test.txt
+          uv pip check
       - run: make git
       - name: Pull translations from openlibrary-i18n
         run: |
